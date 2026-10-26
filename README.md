@@ -1,6 +1,8 @@
-# WHovo — cheat to win, don't get caught
+# Sus Shot — cheat to win, don't get caught
 
-![WHovo cover](cover.png)
+*by WHovo*
+
+![Sus Shot cover](cover.png)
 
 An 8-player brawl for phones and laptops where **cheats are the power-ups** — and anyone you kill can **report** you.
 

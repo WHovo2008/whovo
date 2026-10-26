@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#26304d"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
-<meta name="description" content="WHovo: an 8-player phone brawl where cheats are the power-ups. Cheat to win, switch them off before you get reported. Join with a room code, no sign-in.">
-<meta property="og:title" content="WHovo — cheat or get caught"><meta property="og:description" content="WHovo: an 8-player phone brawl where cheats are the power-ups. Cheat to win, switch them off before you get reported. Join with a room code, no sign-in."><meta property="og:type" content="website"><meta property="og:url" content="https://whovo2008.github.io/whovo/"><meta property="og:image" content="https://whovo2008.github.io/whovo/cover.png"><meta name="twitter:card" content="summary_large_image">
+<meta name="description" content="Sus Shot: an 8-player phone brawl where cheats are the power-ups. Cheat to win, switch them off before you get reported. Join with a room code, no sign-in.">
+<meta property="og:title" content="Sus Shot — cheat to win, don&#39;t get caught"><meta property="og:description" content="Sus Shot: an 8-player phone brawl where cheats are the power-ups. Cheat to win, switch them off before you get reported. Join with a room code, no sign-in."><meta property="og:type" content="website"><meta property="og:url" content="https://whovo2008.github.io/whovo/"><meta property="og:image" content="https://whovo2008.github.io/whovo/cover.png"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='34' r='24' fill='%233d9bff' stroke='%231c6fd6' stroke-width='4'/%3E%3Cellipse cx='24' cy='24' rx='7' ry='4.5' fill='%23fff' opacity='.5'/%3E%3Crect x='44' y='29' width='16' height='9' rx='4.5' fill='%232c3757'/%3E%3C/svg%3E">
-<title>WHovo</title>
+<title>Sus Shot</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap">
 <style>
 /* Layout: one full-screen top-down canvas; HUD pinned to corners; phone buttons in a right-edge column with the cheat slots arcing around the aim-stick home; menus/results as centered panels. Candy palette: navy UI chips over a cream world, every player a different colour, yellow for anything cheat-related, coral for danger. */
@@ -154,7 +154,8 @@ body.en .lang-zh,body:not(.en) .lang-en{display:none!important}
 .mcol{width:min(360px,100%);max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:18px;box-sizing:border-box;padding-block:8px}
 .brand h1{margin:0;font-family:var(--hud);font-weight:700;font-size:clamp(46px,9vw,78px);line-height:.95;letter-spacing:.01em}
 .brand h1 em{font-style:normal} .brand h1 em i{font-style:normal;display:inline-block}
-.brand h1 em i:nth-child(1){color:#3d9bff} .brand h1 em i:nth-child(2){color:#ff6b6b;transform:translateY(-4px) rotate(-6deg)} .brand h1 em i:nth-child(3){color:#ffd43b}
+.brand h1 em i:nth-child(1){color:#3d9bff} .brand h1 em i:nth-child(2){color:#ff6b6b;transform:translateY(-4px) rotate(-6deg)} .brand h1 em i:nth-child(3){color:#ffd43b} .brand h1 em i:nth-child(4){color:#51cf66;transform:translateY(-2px) rotate(5deg)}
+.brand .by{display:block;margin-top:6px;font-size:12px;color:var(--muted);letter-spacing:.12em}
 .tag{margin-top:8px;font-size:13px;color:var(--muted);letter-spacing:.2em}
 .mbtns{display:flex;flex-direction:column;gap:8px}
 .mb{display:flex;align-items:center;justify-content:space-between;width:100%;padding:13px 16px;background:var(--panel);border:2px solid var(--line);border-radius:14px;color:var(--ink);font-family:var(--hud);font-size:17px;font-weight:600;letter-spacing:.03em;cursor:pointer;text-align:left;touch-action:manipulation;box-shadow:0 4px 0 rgba(15,20,36,.4)}
@@ -237,7 +238,7 @@ body.editing .hud,body.editing #btnPause,body.editing #inv{display:none!importan
 
 <div class="overlay menu" id="start">
   <div class="mcol">
-    <div class="brand"><h1>WH<em><i>o</i><i>v</i><i>o</i></em></h1><div class="tag" data-t="8 人外挂乱斗 · 活到最后">8 人外挂乱斗 · 活到最后</div></div>
+    <div class="brand"><h1>Sus <em><i>S</i><i>h</i><i>o</i><i>t</i></em></h1><div class="tag" data-t="开挂别被抓 · 8 人乱斗">开挂别被抓 · 8 人乱斗</div><span class="by">by WHovo</span></div>
     <div class="mbtns">
       <button class="mb pri" id="btnStart" type="button" data-t="人机乱斗">人机乱斗</button>
       <div class="diff" id="diffRow" hidden>
@@ -451,7 +452,7 @@ if(!isTouch){for(const id of ['btnAds'])$(id).hidden=true;document.body.classLis
 
 // ---------- SETTINGS (per viewer, remembered in this browser) ----------
 const DEF_KEYS={fwd:'w',back:'s',left:'a',right:'d',sprint:'shift',ads:'v',blink:'f',c1:'1',c2:'2',pause:'p'};
-const SET={lang:/^zh/i.test(navigator.language||'')?'zh':'en',vol:.8,quality:'high',fps:false,shake:true,fireThr:.55,adsMode:'mix',keys:Object.assign({},DEF_KEYS),layout:{},btnAlpha:1};
+const SET={lang:'en',vol:.8,quality:'high',fps:false,shake:true,fireThr:.55,adsMode:'mix',keys:Object.assign({},DEF_KEYS),layout:{},btnAlpha:1};
 const SKEY='whovo-br-settings';
 try{const s=JSON.parse(localStorage.getItem(SKEY)||'{}')||{};if(['zh','en'].includes(s.lang))SET.lang=s.lang;
   if(typeof s.vol==='number')SET.vol=clamp(s.vol,0,1);if(['high','low'].includes(s.quality))SET.quality=s.quality;SET.fps=s.fps===true;SET.shake=s.shake!==false;
@@ -465,7 +466,7 @@ const LOWQ=()=>SET.quality==='low';
 // ---------- LANGUAGE (the Chinese text is the key; English lookups below, {0} {1} are filled in) ----------
 const EN={
 'HP 生命':'HP','嫌疑值':'Suspicion','换弹':'Reload','蹲':'Crouch','开镜':'Scope','暂停':'Pause','继续观战':'Keep watching','再来一局':'Play again','主菜单':'Main menu',
-'8 人外挂乱斗 · 活到最后':'8-player cheat brawl · last one standing wins','人机乱斗':'Play vs bots','简单':'Easy','BOT 反应慢':'slow bots','普通':'Normal','高手菜鸟都有':'mixed skill','困难':'Hard','BOT 很准':'sharp bots',
+'8 人外挂乱斗 · 活到最后':'8-player cheat brawl · last one standing wins','开挂别被抓 · 8 人乱斗':'Cheat to win. Don\'t get caught.','人机乱斗':'Play vs bots','简单':'Easy','BOT 反应慢':'slow bots','普通':'Normal','高手菜鸟都有':'mixed skill','困难':'Hard','BOT 很准':'sharp bots',
 '联机乱斗':'Play online','设置':'Settings','玩法说明':'How to play','建议横屏游玩，视野更大。':'Turn your phone sideways for a wider view.',
 '打外挂箱开挂 · 开太多会被封号 · 毒圈越缩越小':'Break crates for cheats · cheat too much and get banned · the zone keeps closing',
 '这个窗口连不上联机。联机需要在 claude.ai 登录后打开这个页面；其他人也要登录，并且你在分享菜单里给了他们访问权限。同一个账号在手机和电脑上各开一个，也能一起玩。':'Online play isn’t available in this window. Open this page signed in to claude.ai; other players need to be signed in too, with access from your share menu. You can also play with yourself on a phone and a computer.',
