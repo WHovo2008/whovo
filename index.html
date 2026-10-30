@@ -1760,6 +1760,62 @@ function peerRoomAPI(){
         G.leave=()=>{L.close();die();return Promise.resolve();};
         (async()=>{try{const off=await L.pc.createOffer();await L.pc.setLocalDescription(off);sig.send({type:'OFFER',dst:name,payload:{type:'data',connectionId:cid,sdp:L.pc.localDescription,label:'g',reliable:false,serialization:'json'}});}catch(e){L.close();}})();});}};}
 
+// ---------- NO-LOGIN ROOMS over a public MQTT broker: works between any two networks (phone data, school Wi-Fi…) ----------
+// Every player publishes its state to <root>/<room>/<label> and listens to <root>/<room>/+ ; the broker relays everything,
+// so no direct connection between devices is needed. Same small room API as before (join → onPeers / presence / leave).
+// The room creator is still the match host (label '0'). ?mqtt=wss://host/mqtt picks another broker.
+const MQ_BROKERS=PEER_Q.get('mqtt')?[PEER_Q.get('mqtt')]:['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
+const MQ_ROOT='susshot/v1/';
+const mqEnc=typeof TextEncoder==='function'?new TextEncoder():null,mqDec=typeof TextDecoder==='function'?new TextDecoder():null;
+const mqVar=n=>{const o=[];do{let b=n%128;n=Math.floor(n/128);if(n>0)b|=128;o.push(b);}while(n>0);return o;};
+const mqStr=s=>{const b=mqEnc.encode(s);const a=new Uint8Array(2+b.length);a[0]=b.length>>8;a[1]=b.length&255;a.set(b,2);return a;};
+const mqCat=parts=>{let n=0;for(const p of parts)n+=p.length;const a=new Uint8Array(n);let o=0;for(const p of parts){a.set(p,o);o+=p.length;}return a;};
+const mqPkt=(h,parts)=>{const body=mqCat(parts);return mqCat([new Uint8Array([h,...mqVar(body.length)]),body]);};
+// one MQTT 3.1.1 connection over a websocket (QoS 0 only); `will` is published by the broker if we vanish
+function mqConnect(url,will){return new Promise((res,rej)=>{let ws;try{ws=new WebSocket(url,'mqtt');}catch(e){rej('error');return;}ws.binaryType='arraybuffer';
+  const c={url,ws,open:false,on:null,onclose:null,buf:new Uint8Array(0),
+    send(a){if(ws.readyState===1)try{ws.send(a);}catch(e){}},
+    pub(topic,text){c.send(mqPkt(0x30,[mqStr(topic),mqEnc.encode(text)]));},
+    sub(filter){c.send(mqPkt(0x82,[new Uint8Array([0,1]),mqStr(filter),new Uint8Array([0])]));},
+    close(){clearInterval(c.ping);c.send(new Uint8Array([0xE0,0]));try{ws.close();}catch(e){}}};
+  const to=setTimeout(()=>{try{ws.close();}catch(e){}rej('timeout');},8000);
+  ws.onopen=()=>{const flags=2|(will?4:0),parts=[mqStr('MQTT'),new Uint8Array([4,flags,0,30]),mqStr('ss'+rid(16))];if(will)parts.push(mqStr(will),new Uint8Array([0,0]));c.send(mqPkt(0x10,parts));};
+  ws.onmessage=e=>{const d=new Uint8Array(e.data);c.buf=c.buf.length?mqCat([c.buf,d]):d;
+    for(;;){const b=c.buf;if(b.length<2)break;let len=0,mul=1,i=1,ok=false;for(;i<5&&i<b.length;i++){len+=(b[i]&127)*mul;mul*=128;if(!(b[i]&128)){ok=true;i++;break;}}
+      if(!ok||b.length<i+len)break;const type=b[0]>>4,body=b.subarray(i,i+len);c.buf=b.subarray(i+len);
+      if(type===2){if(body[1]===0){c.open=true;clearTimeout(to);c.ping=setInterval(()=>c.send(new Uint8Array([0xC0,0])),20000);res(c);}else{clearTimeout(to);try{ws.close();}catch(_){}rej('refused');}}
+      else if(type===3&&c.on){const tl=(body[0]<<8)|body[1],qos=(b[0]>>1)&3,topic=mqDec.decode(body.subarray(2,2+tl));c.on(topic,body.subarray(2+tl+(qos?2:0)));}}};
+  ws.onerror=()=>{if(!c.open){clearTimeout(to);rej('error');}};
+  ws.onclose=()=>{clearInterval(c.ping);if(!c.open){clearTimeout(to);rej('error');}else if(c.onclose)c.onclose();};});}
+function mqttRoomAPI(){
+  if(typeof WebSocket!=='function'||!mqEnc)return null;
+  return {discover:false,pubMs:66,peers:()=>[],presence:()=>Promise.resolve(),onPeers:()=>()=>{},
+    async join(name,opt){const create=!!(opt&&opt.create),code=name.replace(/^whovo-br-/,''),base=MQ_ROOT+code+'/';
+      const mine={label:create?'0':'1'+rid(10),presence:null},list=new Map();let cbs=[],lost=[],c=null,dead=false,hostSeen=nowMs();
+      const fire=()=>{const peers=[...list].map(([l,o])=>({peer:l,kind:'viewer',presence:o.p,sameTab:l===mine.label}));for(const cb of cbs)try{cb({peers});}catch(e){}};
+      const die=()=>{if(dead)return;dead=true;clearInterval(iv);if(c)c.close();for(const f of lost)try{f();}catch(e){}};
+      const take=(l,bytes,into)=>{if(!l||l===mine.label||l.length>16)return;if(!bytes.length){into.delete(l);return;}let p;try{p=JSON.parse(mqDec.decode(bytes));}catch(e){return;}if(!p||typeof p!=='object')return;into.set(l,{p,t:nowMs()});};
+      const tryBroker=async url=>{const k=await mqConnect(url,base+mine.label);const seen=new Map();k.on=(t,b)=>{if(t.startsWith(base))take(t.slice(base.length),b,seen);};k.sub(base+'+');return {k,seen};};
+      if(create){
+        // the first broker that answers; if a host already sits on this code there, report it as taken
+        let got=null;for(const url of MQ_BROKERS){try{got=await tryBroker(url);break;}catch(e){}}
+        if(!got)throw 'error';await new Promise(r=>setTimeout(r,1200));if(got.seen.has('0')){got.k.close();throw 'taken';}
+        c=got.k;for(const [l,o] of got.seen)list.set(l,o);
+      }else{
+        // look for the host on every broker at once and keep the one where it answers
+        c=await new Promise((res,rej)=>{const tries=[];let done=false,left=MQ_BROKERS.length;
+          const fin=v=>{if(done)return;done=true;clearInterval(chk);clearTimeout(to);for(const t of tries)if(!v||t.k!==v.k)t.k.close();if(v){for(const [l,o] of v.seen)list.set(l,o);res(v.k);}else rej({code:'notfound'});};
+          const chk=setInterval(()=>{for(const t of tries)if(t.seen.has('0'))return fin(t);},150);const to=setTimeout(()=>fin(null),9000);
+          for(const url of MQ_BROKERS)tryBroker(url).then(t=>{if(done)t.k.close();else tries.push(t);},()=>{if(--left<=0&&!tries.length)fin(null);});});}
+      c.on=(t,b)=>{if(!t.startsWith(base))return;const l=t.slice(base.length);take(l,b,list);if(l==='0')hostSeen=nowMs();fire();};
+      c.onclose=()=>die();
+      // drop anyone silent for 6 s; a guest whose host has been silent for 8 s leaves the room
+      const iv=setInterval(()=>{const now=nowMs();let ch=false;for(const [l,o] of list)if(l!==mine.label&&now-o.t>6000){list.delete(l);ch=true;}if(ch)fire();if(!create&&now-hostSeen>8000)die();},1000);
+      const G={onPeers(cb,l){cbs.push(cb);if(l)lost.push(l);setTimeout(fire,0);return()=>{cbs=cbs.filter(x=>x!==cb);lost=lost.filter(x=>x!==l);};},
+        presence(p){if(dead)return Promise.resolve();mine.presence=p;list.set(mine.label,{p,t:nowMs()});c.pub(base+mine.label,JSON.stringify(p));fire();return Promise.resolve();},
+        leave(){if(!dead){c.pub(base+mine.label,'');}lost=[];die();return Promise.resolve();}};
+      return G;}};}
+
 // ---------- ONLINE: rooms of up to 8 players; BOTs fill the empty seats ----------
 // Everything travels in room presence (~30/s, any signed-in viewer). Each page is the authority for its own player
 // (position, HP, cheats, suspicion) and sends hit claims for anyone else it shoots. The host (lowest peer label in the room)
@@ -1912,7 +1968,7 @@ function netInterp(){const rt=nowMs()-INTERP_MS;
     // a remote player whose own page says it died, but whose kill event we missed
     if(u.kind==='remote'&&L[5]===0&&u.alive){u.deadT=(u.deadT||0)+1;if(u.deadT>20)kill(u,null,false,null);}else if(u.kind==='remote')u.deadT=0;
     if(u.kind==='remote'){if(typeof L[9]==='number')u.lives=clamp(L[9]|0,0,LIVES);if(typeof L[10]==='number')u.sus=clamp(L[10],0,100);if(L[5]===1&&!u.alive&&!u.out&&u.lives>0)reviveRemote(u,L[0],L[1]);if(L[5]===0&&!u.alive&&u.lives<=0)markOut(u);}}}
-function netPublish(){const G=NET.game,now=nowMs();if(!G||now-NET.pT<50)return;NET.pT=now;
+function netPublish(){const G=NET.game,now=nowMs();if(!G||now-NET.pT<((NET.room&&NET.room.pubMs)||50))return;NET.pT=now;
   while(NET.evT.length&&now-NET.evT[0]>2000){NET.evT.shift();NET.ev.shift();}
   const inM=NET.status==='match',p=me;
   const pres={n:NET.nick,st:inM?'m':'l',s:inM?[r2(p.x),r2(p.z),r2(p.yaw),r2(p.cr),Math.max(0,Math.round(p.hp)),p.alive?1:0,r2(p.spr),p.reload>0?1:0,p.ban>0?1:0,p.lives,Math.round(p.sus)]:null,
@@ -1942,7 +1998,8 @@ $('roomList').addEventListener('click',e=>{const b=e.target.closest&&e.target.cl
 // light up online play once the room answers; the page works fully without it
 // on claude.ai the built-in room is used; anywhere else (a plain website) the no-login WebRTC rooms above
 (async()=>{let r=null;try{r=window.claude&&typeof window.claude.use==='function'?await window.claude.use('room'):null;}catch(e){r=null;}
-  if(!r)r=peerRoomAPI();NET.room=r;if(r&&r.discover!==false)r.onPeers(()=>{if(state==='lobby')renderLobby();},()=>{NET.room=null;if(state==='lobby')renderLobby();});
+  // default: relay through a public MQTT broker (works across any networks); ?net=p2p or ?sig=… uses direct WebRTC instead
+  if(!r)r=(PEER_Q.get('net')==='p2p'||PEER_Q.get('sig'))?peerRoomAPI():mqttRoomAPI();NET.room=r;if(r&&r.discover!==false)r.onPeers(()=>{if(state==='lobby')renderLobby();},()=>{NET.room=null;if(state==='lobby')renderLobby();});
   $('roomListBox').hidden=!!(r&&r.discover===false);$('inviteBox').hidden=!(r&&r.discover===false);
   // an invite link (?room=CODE) drops you straight into that room
   const inv=(PEER_Q.get('room')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(r&&inv.length===4&&state==='menu'){$('start').hidden=true;openLobby();$('codeIn').value=inv;joinGame(inv,false);}
