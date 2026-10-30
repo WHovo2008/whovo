@@ -1230,7 +1230,9 @@ function update(dt){
   units.forEach((u,i)=>{if(u.alive&&owns(u))animUnit(u,old[i][0],old[i][1],dt);stepCheck(u);});}
 
 // ---------- CAMERA & RENDER ----------
-function resize(){cw=innerWidth;ch=innerHeight;dpr=LOWQ()?1:Math.min(2,window.devicePixelRatio||1);
+// big high-DPI screens would mean drawing 5–7 million pixels a frame; cap the canvas at about twice a phone's load
+const MAX_PX=2.6e6;
+function resize(){cw=innerWidth;ch=innerHeight;dpr=LOWQ()?1:Math.min(2,window.devicePixelRatio||1);if(cw*ch*dpr*dpr>MAX_PX)dpr=Math.max(1,Math.sqrt(MAX_PX/(cw*ch)));
   cv.width=Math.round(cw*dpr);cv.height=Math.round(ch*dpr);cv.style.width=cw+'px';cv.style.height=ch+'px';$('rotHint').hidden=!(isTouch&&ch>cw);}
 addEventListener('resize',resize);
 function updateCam(dt){const L=live(),f=L&&me.alive?me:watch;let tx=f?f.x:CX,tz=f?f.z:CZ;const view=L?VIEW:28;
@@ -1779,11 +1781,11 @@ function mqConnect(url,will){return new Promise((res,rej)=>{let ws;try{ws=new We
     sub(filter){c.send(mqPkt(0x82,[new Uint8Array([0,1]),mqStr(filter),new Uint8Array([0])]));},
     close(){clearInterval(c.ping);c.send(new Uint8Array([0xE0,0]));try{ws.close();}catch(e){}}};
   const to=setTimeout(()=>{try{ws.close();}catch(e){}rej('timeout');},8000);
-  ws.onopen=()=>{const flags=2|(will?4:0),parts=[mqStr('MQTT'),new Uint8Array([4,flags,0,30]),mqStr('ss'+rid(16))];if(will)parts.push(mqStr(will),new Uint8Array([0,0]));c.send(mqPkt(0x10,parts));};
+  ws.onopen=()=>{const flags=2|(will?4:0),parts=[mqStr('MQTT'),new Uint8Array([4,flags,0,90]),mqStr('ss'+rid(16))];if(will)parts.push(mqStr(will),new Uint8Array([0,0]));c.send(mqPkt(0x10,parts));};
   ws.onmessage=e=>{const d=new Uint8Array(e.data);c.buf=c.buf.length?mqCat([c.buf,d]):d;
     for(;;){const b=c.buf;if(b.length<2)break;let len=0,mul=1,i=1,ok=false;for(;i<5&&i<b.length;i++){len+=(b[i]&127)*mul;mul*=128;if(!(b[i]&128)){ok=true;i++;break;}}
       if(!ok||b.length<i+len)break;const type=b[0]>>4,body=b.subarray(i,i+len);c.buf=b.subarray(i+len);
-      if(type===2){if(body[1]===0){c.open=true;clearTimeout(to);c.ping=setInterval(()=>c.send(new Uint8Array([0xC0,0])),20000);res(c);}else{clearTimeout(to);try{ws.close();}catch(_){}rej('refused');}}
+      if(type===2){if(body[1]===0){c.open=true;clearTimeout(to);c.ping=setInterval(()=>c.send(new Uint8Array([0xC0,0])),15000);res(c);}else{clearTimeout(to);try{ws.close();}catch(_){}rej('refused');}}
       else if(type===3&&c.on){const tl=(body[0]<<8)|body[1],qos=(b[0]>>1)&3,topic=mqDec.decode(body.subarray(2,2+tl));c.on(topic,body.subarray(2+tl+(qos?2:0)));}}};
   ws.onerror=()=>{if(!c.open){clearTimeout(to);rej('error');}};
   ws.onclose=()=>{clearInterval(c.ping);if(!c.open){clearTimeout(to);rej('error');}else if(c.onclose)c.onclose();};});}
@@ -1807,8 +1809,9 @@ function mqttRoomAPI(){
           const fin=v=>{if(done)return;done=true;clearInterval(chk);clearTimeout(to);for(const t of tries)if(!v||t.k!==v.k)t.k.close();if(v){for(const [l,o] of v.seen)list.set(l,o);res(v.k);}else rej({code:'notfound'});};
           const chk=setInterval(()=>{for(const t of tries)if(t.seen.has('0'))return fin(t);},150);const to=setTimeout(()=>fin(null),9000);
           for(const url of MQ_BROKERS)tryBroker(url).then(t=>{if(done)t.k.close();else tries.push(t);},()=>{if(--left<=0&&!tries.length)fin(null);});});}
-      c.on=(t,b)=>{if(!t.startsWith(base))return;const l=t.slice(base.length);take(l,b,list);if(l==='0')hostSeen=nowMs();fire();};
-      c.onclose=()=>die();
+      const hook=k=>{k.on=(t,b)=>{if(!t.startsWith(base))return;const l=t.slice(base.length);take(l,b,list);if(l==='0')hostSeen=nowMs();fire();};
+        k.onclose=async()=>{if(dead)return;for(let i=0;i<8&&!dead;i++){await new Promise(r=>setTimeout(r,i?1500:300));try{const k2=await mqConnect(k.url,base+mine.label);if(dead){k2.close();return;}c=k2;hook(k2);k2.sub(base+'+');if(mine.presence)k2.pub(base+mine.label,JSON.stringify(mine.presence));return;}catch(e){}}die();};};
+      hook(c);
       // drop anyone silent for 6 s; a guest whose host has been silent for 8 s leaves the room
       const iv=setInterval(()=>{const now=nowMs();let ch=false;for(const [l,o] of list)if(l!==mine.label&&now-o.t>6000){list.delete(l);ch=true;}if(ch)fire();if(!create&&now-hostSeen>8000)die();},1000);
       const G={onPeers(cb,l){cbs.push(cb);if(l)lost.push(l);setTimeout(fire,0);return()=>{cbs=cbs.filter(x=>x!==cb);lost=lost.filter(x=>x!==l);};},
